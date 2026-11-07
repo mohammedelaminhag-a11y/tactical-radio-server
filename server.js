@@ -164,6 +164,19 @@ function sendToAdminsListening(roomId, message) {
     });
 }
 
+function broadcastUserList(roomId) {
+    if (!rooms[roomId]) return;
+    const users = Array.from(rooms[roomId].users).map(ws => {
+        const c = clients.get(ws);
+        return c ? c.callsign : null;
+    }).filter(Boolean);
+    
+    const payload = JSON.stringify({ type: 'user_list', users: users });
+    rooms[roomId].users.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+    });
+}
+
 function updateAdminDashboard() {
     const roomsData = {};
     for (const [id, room] of Object.entries(rooms)) {
