@@ -1,26 +1,23 @@
-# استخدام صورة Node.js خفيفة ومستقرة
-FROM node:18-alpine
+# استخدام صورة Debian Slim بدلاً من Alpine لتفادي مشاكل تجميع Opus
+FROM node:18-slim
 
-# تثبيت أدوات البناء الضرورية لترجمة مكتبة OpusScript (حتى لا يفشل npm install)
-RUN apk add --no-cache python3 make g++
-
-# تعيين مجلد العمل داخل الحاوية
+# تعيين مجلد العمل
 WORKDIR /app
 
-# نسخ ملفات التعريف أولاً للاستفادة من التخزين المؤقت
+# نسخ ملفات التعريف
 COPY package*.json ./
 
-# تثبيت جميع المكتبات (بما فيها بناء الحزم الأصلية)
-RUN npm install
+# تثبيت المكتبات (تأكد أن package.json لا يحتوي على node_modules محلي)
+RUN npm install --omit=dev
 
-# نسخ باقي ملفات المشروع (server.js ومجلد public)
+# نسخ باقي الملفات
 COPY . .
 
-# تعيين متغير البيئة للبيئة الإنتاجية
+# تعيين بيئة التشغيل
 ENV NODE_ENV=production
 
-# فتح المنفذ (متوافق مع المنفذ 8080 أو ما ترسله المنصة عبر PORT)
+# فتح المنفذ
 EXPOSE 8080
 
-# أمر تشغيل الخادم
+# أمر التشغيل
 CMD ["node", "server.js"]
