@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>TACTICAL COMMAND CENTER</title>
+    <style>
+        body { background-color: #0a0a0a; color: #00FF41; font-family: monospace; margin: 0; padding: 20px; }
+        h1 { text-align: center; border-bottom: 2px solid #1b3b1b; padding-bottom: 10px; text-shadow: 0 0 10px #00FF41; }
+        input { background: #000; border: 1px solid #00FF41; color: #00FF41; padding: 8px; font-family: monospace; }
+        button { background: #1b3b1b; border: 1px solid #00FF41; color: #00FF41; padding: 8px 12px; cursor: pointer; font-family: monospace; font-weight: bold; margin: 2px; }
+        button:hover { background: #00FF41; color: #000; box-shadow: 0 0 10px #00FF41; }
+        .danger { border-color: #FF3333; color: #FF3333; background: #330000; }
+        .warning { border-color: #FFB000; color: #FFB000; background: #332200; }
+        .room { border: 1px solid #1b3b1b; margin-bottom: 15px; padding: 15px; background: #111; }
+        .user { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #222; align-items: center; }
+        .talking { color: #FF3333; font-weight: bold; }
+        #dashboard { display: none; }
+        .create-room-box { margin-bottom: 20px; padding: 15px; background: #111; border: 1px dashed #00FF41; }
+        #errorMsg { color: #FF3333; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div id="loginBox" style="text-align: center; margin-top: 15vh;">
+        <h1>TACTICAL COMMAND</h1>
+        <input type="password" id="adminPass" placeholder="PASSWORD">
+        <br><br>
+        <button onclick="login()">ACCESS SYSTEM</button>
+        <div id="errorMsg"></div>
+    </div>
+
+    <div id="dashboard">
+        <h1>LIVE CONTROL</h1>
+        <div class="create-room-box">
+            <input type="text" id="newRoomId" placeholder="CH ID">
+            <input type="text" id="newRoomName" placeholder="NAME">
+            <input type="text" id="newRoomPass" placeholder="PASS">
+            <button onclick="createRoom()">CREATE</button>
+        </div>
+        <div id="roomsContainer"></div>
+    </div>
+
+    <script>
+        let ws;
+        let audioCtx;
+        let currentListeningRoom = null;
+        let currentRooms = {};
+
+        function login() {
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            ws = new WebSocket(protocol + window.location.host);
+            ws.binaryType = 'arraybuffer';
+           
+            ws.onopen = () => ws.send(JSON.stringify({ type: 'admin_join', password: document.getElementById('adminPass').value }));
+           
+            ws.onmessage = async (event) => {
+                if (typeof event.data === 'string') {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'admin_logged_in') {
+                        document.getElementById('loginBox').style.display = 'none';
+                        document.getElementById('dashboard').style.display = 'block';
+                    }
+                    if (data.type === 'error') document.getElementById('errorMsg').innerText = data.message;
+                    if (data.type === 'update_rooms') {
+                        currentRooms = data.rooms;
+                        renderRooms(data.rooms);
+                    }
+                } else if (event.data instanceof ArrayBuffer) {
+                    playIncomingAudio(event.data);
+                }
+            };
+        }
+
+        function renderRooms(rooms) {
+            const container = document.getElementById('roomsContainer');
+            container.innerHTML = '';
+            if (Object.keys(rooms).length === 0) return;
+
+            for (const [id, room] of Object.entries(rooms)) {
+                const roomDiv = document.createElement('div');
+                roomDiv.className = 'room';
+               
+                let usersHtml = '';
+                room.users.forEach(u => {
+                    usersHtml += `
+                        <div class="user">
+                            <span class="${u.isTalking ? 'talking' : ''}">${u.callsign}</span>
+                            <button class="danger" onclick="kickUser('${u.callsign}')">KICK</button>
+                        </div>
+                    `;
+                });
+
+                roomDiv.innerHTML = `
+                    <h3>ROOM: ${id} (${room.name})</h3>
+                    <div>${usersHtml || 'Empty'}</div>
+                    <div style="margin-top:10px;">
+                        <button class="${currentListeningRoom === id ? 'danger' : 'warning'}" onclick="toggleListen('${id}')">
+                            ${currentListeningRoom === id ? 'STOP LISTENING' : 'LISTEN LIVE'}
+                        </button>
+                        <button class="danger" onclick="deleteRoom('${id}')">DELETE</button>
+                    </div>
+                `;
+                container.appendChild(roomDiv);
+            }
+        }
+
+        function createRoom() { ws.send(JSON.stringify({ type: 'create_room', roomId: document.getElementById('newRoomId').value, name: document.getElementById('newRoomName').value, password: document.getElementById('newRoomPass').value })); }
+        function deleteRoom(id) { if(confirm('Delete?')) ws.send(JSON.stringify({ type: 'delete_room', roomId: id })); }
+        function kickUser(callsign) { if(confirm('Kick?')) ws.send(JSON.stringify({ type: 'kick_user', callsign: callsign })); }
+
+        async function toggleListen(roomId) {
+            if (currentListeningRoom === roomId) {
+                currentListeningRoom = null;
+                ws.send(JSON.stringify({ type: 'admin_listen_stop' }));
+            } else {
+                currentListeningRoom = roomId;
+                ws.send(JSON.stringify({ type: 'admin_listen_start', roomId: roomId }));
+               
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                }
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
+            }
+            renderRooms(currentRooms);
+        }
+
+        async function playIncomingAudio(arrayBuffer) {
+            if (!audioCtx || !currentListeningRoom) return;
+            try {
+                const pcmInt16 = new Int16Array(arrayBuffer);
+                const pcmFloat32 = new Float32Array(pcmInt16.length);
+                for (let i = 0; i < pcmInt16.length; i++) {
+                    pcmFloat32[i] = pcmInt16[i] / 32768.0;
+                }
+                const audioBuffer = audioCtx.createBuffer(1, pcmFloat32.length, 16000);
+                audioBuffer.copyToChannel(pcmFloat32, 0);
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
+                source.start();
+            } catch (e) { console.error(e); }
+        }
+    </script>
+</body>
+</html>
