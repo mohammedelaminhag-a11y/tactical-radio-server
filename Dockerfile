@@ -5,4 +5,5 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY . .
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["node", "server.js"]
+
+CMD ["node", "-e", "console.log('hello'); require('http').createServer((q,s)=>s.end('ok')).listen(3000,'0.0.0.0')"]
