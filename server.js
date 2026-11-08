@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const WebSocket = require('ws');
 
 // ===== الإعدادات (كلها قابلة للضبط من متغيرات البيئة) =====
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';                       // فعّله إذا كان الخادم خلف وسيط (يقرأ IP من X-Forwarded-For)
 const ALLOW_AUTO_CREATE_ROOMS = process.env.ALLOW_AUTO_CREATE_ROOMS !== '0'; // 0 = الغرف تُنشأ من لوحة الإدارة فقط
 const NOTIFY_ON_LISTEN = process.env.NOTIFY_ON_LISTEN !== '0';              // إشعار الأعضاء عندما تستمع الإدارة
